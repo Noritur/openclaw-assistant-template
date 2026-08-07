@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${ASSISTANT_CONFIG_FILE:-$ROOT_DIR/instance/config.env}"
+COMMAND=""
+: "${ALLOW_UNSUPPORTED_PLATFORM:=no}"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/template.lock"
+
+usage() {
+  cat <<'EOF'
+usage: ./assistantctl <command> [--allow-unsupported]
+
+  setup           initialize private repositories and deploy a new assistant
+  restore         deploy an existing private memory repository to a clean VPS
+  doctor          run live runtime, backup, channel, and security checks
+  backup-now      synchronously export, commit, push, and verify memory
+  policy-approve  accept the current persona files as the approved baseline
+  consent-revoke  stop backing up raw transcripts already on the server
+
+  --allow-unsupported  permit best-effort setup/restore on non-Ubuntu targets
+EOF
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    setup|restore|doctor|backup-now|policy-approve|consent-revoke|help)
+      if [[ -n "$COMMAND" ]]; then
+        echo "only one assistantctl command may be specified" >&2
+        exit 64
+      fi
+      COMMAND="$argument"
+      ;;
+    --allow-unsupported)
+      ALLOW_UNSUPPORTED_PLATFORM=yes
+      ;;
+    -h|--help)
+      if [[ -n "$COMMAND" ]]; then
+        echo "only one assistantctl command may be specified" >&2
+        exit 64
+      fi
+      COMMAND=help
+      ;;
+    *)
+      echo "unknown argument: $argument" >&2
+      exit 64
+      ;;
+  esac
+done
+COMMAND="${COMMAND:-help}"
+export ALLOW_UNSUPPORTED_PLATFORM
+
+prompt_value() {
+  local variable="$1"
+  local label="$2"
+  local default_value="${3:-}"
+  local value
+  if [[ -n "$default_value" ]]; then
+    read -r -p "$label [$default_value]: " value
+    value="${value:-$default_value}"
+  else
+    read -r -p "$label: " value
+  fi
+  printf -v "$variable" '%s' "$value"
+}
+
+write_instance_config() {
+  command -v gh >/dev/null
+  gh auth status >/dev/null
+
+  local repo_json visibility github_user infra_slug
+  repo_json="$(gh repo view --json nameWithOwner,visibility)"
+  visibility="$(jq -r .visibility <<<"$repo_json")"
+  infra_slug="$(jq -r .nameWithOwner <<<"$repo_json")"
+  [[ "$visibility" == "PRIVATE" ]] || {
+    echo "create a private repository with GitHub 'Use this template', then run setup there" >&2
+    exit 1
+  }
+  github_user="$(gh api user --jq .login)"
+
+  local assistant_id assistant_name owner_name server_ip admin_user bot_user
+  local ssh_key telegram_id memory_slug raw_consent github_mcp taildrive
+  local taildrive_tailnet="" taildrive_device="" taildrive_share=""
+  local server_host_key=""
+  prompt_value assistant_id "assistant id" "assistant"
+  prompt_value assistant_name "assistant display name" "$assistant_id"
+  prompt_value owner_name "owner display name" "$github_user"
+  prompt_value server_ip "Ubuntu 24.04 server IP or hostname"
+  prompt_value admin_user "admin SSH user" "root"
+  prompt_value bot_user "runtime user" "assistant"
+  prompt_value ssh_key "local SSH key filename" "id_ed25519_openclaw"
+
+  # Read the host key once, here, and pin it. This first read is still trust on
+  # first use, but every later connection is verified against it instead of
+  # re-accepting whatever answers.
+  server_host_key="$(ssh-keyscan -t ed25519 "$server_ip" 2>/dev/null |
+    grep -v '^#' | awk 'NF >= 3 {print $2" "$3; exit}')"
+  if [[ -n "$server_host_key" ]]; then
+    echo "pinned host key for $server_ip: $server_host_key"
+  else
+    echo "warning: could not read a host key for $server_ip" >&2
+    echo "         connections will accept the host key on first use" >&2
+  fi
+  prompt_value telegram_id "numeric Telegram owner id"
+  prompt_value memory_slug "private memory repo" "$github_user/$assistant_id-memory"
+  prompt_value raw_consent "store raw conversations in the private memory repo (yes/no)" "no"
+  prompt_value github_mcp "enable optional GitHub read-only MCP (yes/no)" "no"
+  prompt_value taildrive "enable optional Taildrive bridge (yes/no)" "no"
+  if [[ "$taildrive" == "yes" ]]; then
+    prompt_value taildrive_tailnet "Tailscale tailnet DNS suffix"
+    prompt_value taildrive_device "Taildrive source device name"
+    prompt_value taildrive_share "Taildrive share name"
+  fi
+
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  {
+    echo "# Non-secret instance state. Keep this repository private."
+    printf 'ASSISTANT_ID=%q\n' "$assistant_id"
+    printf 'ASSISTANT_NAME=%q\n' "$assistant_name"
+    printf 'OWNER_NAME=%q\n' "$owner_name"
+    printf 'SERVER_IP=%q\n' "$server_ip"
+    printf 'SERVER_SSH_HOST_KEY=%q\n' "$server_host_key"
+    printf 'ADMIN_SSH_USER=%q\n' "$admin_user"
+    printf 'SSH_USER=%q\n' "$bot_user"
+    printf 'SSH_KEY_NAME=%q\n' "$ssh_key"
+    printf 'BOT_USER=%q\n' "$bot_user"
+    printf 'TELEGRAM_USER_ID=%q\n' "$telegram_id"
+    printf 'MEMORY_REPO_SSH=%q\n' "git@github.com:$memory_slug.git"
+    printf 'MEMORY_REPO_SLUG=%q\n' "$memory_slug"
+    printf 'INFRA_REPO_SLUG=%q\n' "$infra_slug"
+    printf 'OPENCLAW_NPM_PACKAGE=%q\n' "$OPENCLAW_NPM_PACKAGE"
+    printf 'OPENCLAW_VERSION=%q\n' "$OPENCLAW_VERSION"
+    printf 'NODE_MAJOR=%q\n' "$NODE_MAJOR"
+    printf 'CLAWD_WORKSPACE=%q\n' "/home/$bot_user/clawd"
+    printf 'RAW_MEMORY_CONSENT=%q\n' "$raw_consent"
+    printf 'ENABLE_GITHUB_MCP=%q\n' "$github_mcp"
+    printf 'ENABLE_TAILDRIVE=%q\n' "$taildrive"
+    printf 'TAILDRIVE_TAILNET=%q\n' "$taildrive_tailnet"
+    printf 'TAILDRIVE_DEVICE=%q\n' "$taildrive_device"
+    printf 'TAILDRIVE_SHARE=%q\n' "$taildrive_share"
+  } > "$tmp_file"
+  install -m 600 "$tmp_file" "$CONFIG_FILE"
+  rm -f "$tmp_file"
+  echo "wrote non-secret instance config: $CONFIG_FILE"
+}
+
+if [[ "$COMMAND" == "setup" && ! -f "$CONFIG_FILE" ]]; then
+  write_instance_config
+fi
+
+if [[ "$COMMAND" == "help" || "$COMMAND" == "-h" || "$COMMAND" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+# shellcheck source=scripts/lib.sh
+source "$ROOT_DIR/scripts/lib.sh"
+
+check_private_instance_repo() {
+  command -v gh >/dev/null
+  local visibility
+  visibility="$(gh repo view "$INFRA_REPO_SLUG" --json visibility --jq .visibility)"
+  [[ "$visibility" == "PRIVATE" ]] || {
+    echo "instance repository must be private" >&2
+    exit 1
+  }
+}
+
+install_gateway() {
+  ssh_remote 'bash -s' <<'REMOTE'
+set -euo pipefail
+export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:$PATH"
+openclaw gateway install --force --runtime node
+systemctl --user enable openclaw-gateway.service
+REMOTE
+}
+
+ensure_openai_auth() {
+  if ssh_remote 'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:$PATH"; openclaw models status --json | jq -e '\''any(.auth.runtimeAuthRoutes[]?; .provider == "openai" and .status == "usable")'\'' >/dev/null'; then
+    echo "OpenAI/Codex OAuth is usable"
+    return
+  fi
+
+  echo "OpenAI/Codex OAuth requires an interactive device login."
+  ssh "${SSH_ARGS[@]}" -t "$SERVER" \
+    'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:$PATH"; openclaw models auth login --provider openai --device-code'
+}
+
+ensure_github_mcp_auth() {
+  if ssh_remote 'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:$PATH"; openclaw mcp doctor github --probe >/dev/null 2>&1'; then
+    echo "GitHub read-only MCP credentials are usable"
+    return
+  fi
+
+  echo "GitHub read-only MCP requires a fine-grained read-only token."
+  ssh "${SSH_ARGS[@]}" -t "$SERVER" \
+    'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:$PATH"; /usr/local/libexec/set-openclaw-github-token'
+  ssh_remote 'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:$PATH"; openclaw mcp doctor github --probe'
+}
+
+restore_instance() {
+  check_private_instance_repo
+  "$ROOT_DIR/scripts/bootstrap-server.sh"
+  "$ROOT_DIR/scripts/provision-memory-deploy-key.sh"
+  "$ROOT_DIR/scripts/restore-memory-repo.sh"
+  "$ROOT_DIR/scripts/configure-openclaw-secrets.sh"
+  "$ROOT_DIR/scripts/configure-core.sh"
+  "$ROOT_DIR/scripts/configure-gemini-memory.sh"
+  install_gateway
+  "$ROOT_DIR/scripts/install-runtime-jobs.sh"
+  "$ROOT_DIR/scripts/install-hybrid-security.sh"
+  ensure_openai_auth
+
+  if [[ "$ENABLE_GITHUB_MCP" == "yes" ]]; then
+    "$ROOT_DIR/scripts/install-github-readonly-mcp.sh"
+    ensure_github_mcp_auth
+  fi
+  if [[ "$ENABLE_TAILDRIVE" == "yes" ]]; then
+    "$ROOT_DIR/scripts/install-taildrive-bridge.sh"
+  fi
+
+  "$ROOT_DIR/scripts/smoke-test.sh"
+  "$ROOT_DIR/scripts/test-hybrid-security.sh"
+}
+
+case "$COMMAND" in
+  setup)
+    check_private_instance_repo
+    "$ROOT_DIR/scripts/init-memory-repo.sh"
+    restore_instance
+    ;;
+  restore)
+    restore_instance
+    ;;
+  doctor)
+    "$ROOT_DIR/scripts/smoke-test.sh"
+    "$ROOT_DIR/scripts/test-hybrid-security.sh"
+    ssh_remote 'systemctl --user status openclaw-memory-backup.timer --no-pager; cat "$HOME/.local/state/openclaw-assistant/last-backup.json"'
+    ;;
+  backup-now)
+    ssh_remote "CLAWD_WORKSPACE='$CLAWD_WORKSPACE' RAW_MEMORY_CONSENT='$RAW_MEMORY_CONSENT' ASSISTANT_RUNTIME_DIR=/opt/openclaw-assistant/runtime ASSISTANT_RUNTIME_TRUST=required /opt/openclaw-assistant/runtime/auto-backup.sh --verify"
+    ;;
+  policy-approve)
+    # Runs as root: the baseline lives with the root-owned runtime code so the
+    # account the agent runs as cannot approve its own persona change.
+    ssh_admin "CLAWD_WORKSPACE='$CLAWD_WORKSPACE' ASSISTANT_RUNTIME_DIR=/opt/openclaw-assistant/runtime /opt/openclaw-assistant/runtime/policy-baseline.sh --write"
+    ;;
+  consent-revoke)
+    [[ "$RAW_MEMORY_CONSENT" == "no" ]] || {
+      echo "set RAW_MEMORY_CONSENT=no in instance/config.env first," >&2
+      echo "otherwise the next backup stages the transcripts again" >&2
+      exit 1
+    }
+    ssh_remote "CLAWD_WORKSPACE='$CLAWD_WORKSPACE' bash -s" <<'REMOTE'
+set -euo pipefail
+cd "$CLAWD_WORKSPACE"
+if git ls-files --error-unmatch raw raw-indexed >/dev/null 2>&1; then
+  git rm -r --quiet --cached raw raw-indexed
+  git commit -q -m "stop backing up raw transcripts"
+  git push -q origin HEAD:main
+  echo "raw transcripts removed from the tracked tree and pushed"
+else
+  echo "no raw transcripts are tracked"
+fi
+echo
+echo "the files remain on disk and remain in Git history."
+echo "to rewrite the recorded history, run sanitize-memory-history.mjs and"
+echo "follow docs/security-model.md before force-pushing the memory repo."
+REMOTE
+    ;;
+  *)
+    usage >&2
+    exit 64
+    ;;
+esac

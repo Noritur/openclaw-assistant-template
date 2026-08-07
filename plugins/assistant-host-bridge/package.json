@@ -1,0 +1,18 @@
+{
+  "name": "assistant-host-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "runtimeExtensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.6.8",
+      "minGatewayVersion": ">=2026.6.8"
+    },
+    "build": {
+      "openclawVersion": "2026.6.8",
+      "pluginSdkVersion": "2026.6.8"
+    }
+  }
+}

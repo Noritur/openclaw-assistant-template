@@ -1,0 +1,33 @@
+{
+  "enabled": true,
+  "provider": "gemini",
+  "model": "gemini-embedding-001",
+  "remote": {
+    "apiKey": {
+      "source": "file",
+      "provider": "local",
+      "id": "/GEMINI_API_KEY"
+    }
+  },
+  "sources": ["memory", "sessions"],
+  "extraPaths": ["custom", "meta", "raw-indexed"],
+  "experimental": {
+    "sessionMemory": true
+  },
+  "query": {
+    "hybrid": {
+      "enabled": true,
+      "vectorWeight": 0.7,
+      "textWeight": 0.3
+    }
+  },
+  "cache": {
+    "enabled": true,
+    "maxEntries": 50000
+  },
+  "sync": {
+    "onSessionStart": true,
+    "onSearch": true,
+    "watch": true
+  }
+}

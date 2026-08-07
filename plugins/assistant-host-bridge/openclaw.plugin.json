@@ -1,0 +1,21 @@
+{
+  "id": "assistant-host-bridge",
+  "name": "Assistant Host Bridge",
+  "description": "Fixed VPS diagnostics and owner-approved Gateway restart",
+  "contracts": {
+    "tools": [
+      "assistant_host_status",
+      "assistant_host_logs",
+      "assistant_host_resources",
+      "assistant_tailscale_status",
+      "assistant_gateway_restart"
+    ]
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

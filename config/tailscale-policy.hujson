@@ -1,0 +1,26 @@
+// Replace both IP placeholders and the share name before applying this policy.
+{
+  "nodeAttrs": [
+    {
+      "target": ["SERVER_TAILSCALE_IP"],
+      "attr": ["drive:access"],
+    },
+    {
+      "target": ["SOURCE_DEVICE_TAILSCALE_IP"],
+      "attr": ["drive:share"],
+    },
+  ],
+  "grants": [
+    {
+      "src": ["SERVER_TAILSCALE_IP"],
+      "dst": ["SOURCE_DEVICE_TAILSCALE_IP"],
+      "app": {
+        "tailscale.com/cap/drive": [{
+          "shares": ["TAILDRIVE_SHARE_NAME"],
+          "access": "ro",
+        }],
+      },
+    },
+  ],
+  "ssh": [],
+}

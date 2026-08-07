@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: shell syntax
+        run: bash -n assistantctl scripts/*.sh
+      - name: shellcheck
+        run: shellcheck --severity=warning assistantctl scripts/*.sh
+      - name: javascript syntax
+        run: |
+          node --check scripts/daily-digest-analyzer.mjs
+          node --check scripts/export-sessions.mjs
+          node --check scripts/sanitize-memory-history.mjs
+          node --check scripts/test-host-bridge.mjs
+          node --check plugins/assistant-host-bridge/index.js
+      - name: json syntax
+        run: jq empty config/*.json plugins/assistant-host-bridge/*.json
+      - name: unit tests
+        run: |
+          ./scripts/test-assistantctl.sh
+          ./scripts/test-export-sessions.sh
+          ./scripts/test-sanitize-memory-history.sh
+          node ./scripts/test-host-bridge.mjs
+          ./scripts/test-auto-backup.sh
+          ./scripts/test-daily-digest.sh
+          ./scripts/test-check-template-generic.sh
+          ./scripts/test-notify-owner.sh
+      - name: secret scan
+        run: ./scripts/check-secrets.sh
+      # A tracked instance/config.env is only safe while the repository is
+      # private. This is the invariant that lets the recovery kit keep the file
+      # in Git at all; without it a visibility flip silently publishes the
+      # instance. The check runs unconditionally and decides in the script: a
+      # step-level `if` that evaluates wrong would disable the gate silently,
+      # and an absent visibility value must fail rather than skip.
+      - name: instance config requires a private repository
+        env:
+          REPO_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          if [[ ! -f instance/config.env ]]; then
+            echo "no instance config tracked; nothing to protect"
+            exit 0
+          fi
+          if [[ "$REPO_PRIVATE" != "true" ]]; then
+            echo "instance/config.env is tracked in a repository that is not private" >&2
+            echo "reported visibility: private=${REPO_PRIVATE:-unknown}" >&2
+            echo "make the repository private or remove the instance config" >&2
+            exit 1
+          fi
+          echo "instance config present and repository is private"
+      # The guard derives its patterns from instance/config.env, so it only has
+      # something to look for where that file exists. This is the export gate
+      # for the private repo; the public template is protected by having been
+      # produced through it, plus the guard's always-on generic scan.
+      - name: private instance value scan
+        run: ./scripts/check-template-generic.sh

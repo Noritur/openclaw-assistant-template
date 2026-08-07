@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "defaults": {
+    "security": "allowlist",
+    "ask": "on-miss",
+    "askFallback": "deny",
+    "autoAllowSkills": false
+  },
+  "agents": {
+    "main": {
+      "security": "allowlist",
+      "ask": "on-miss",
+      "askFallback": "deny",
+      "autoAllowSkills": false,
+      "allowlist": [
+        {
+          "id": "eb3f4e37-811d-4d19-a036-cf02656df71c",
+          "pattern": "/usr/local/libexec/assistant-hostctl",
+          "argPattern": "^(status|logs|resources|tailscale)$",
+          "source": "hybrid-policy"
+        }
+      ]
+    }
+  }
+}

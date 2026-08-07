@@ -1,0 +1,15 @@
+.DS_Store
+.cache/
+.env
+.env.*
+*.log
+*.tmp
+*.db
+*.sqlite*
+node_modules/
+dist/
+venv/
+.venv/
+secrets/
+config/
+inbox/

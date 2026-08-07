@@ -1,0 +1,11 @@
+TEMPLATE_VERSION=1.0.0
+OPENCLAW_NPM_PACKAGE=openclaw
+OPENCLAW_VERSION=2026.6.8
+NODE_MAJOR=24
+
+# Optional GitHub read-only MCP module. The digest is recorded here so the
+# installer verifies against a value committed under review, rather than
+# against a checksum file fetched from the same place as the artifact.
+GITHUB_MCP_VERSION=1.4.0
+GITHUB_MCP_ARCHIVE=github-mcp-server_Linux_x86_64.tar.gz
+GITHUB_MCP_SHA256=cd4da1aba408f9675db2762e0a08d58a3db96d604fa9f92353491fa353f9beb9
