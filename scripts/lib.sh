@@ -30,6 +30,7 @@ fi
 : "${OPENCLAW_VERSION:=2026.6.8}"
 : "${NODE_MAJOR:=24}"
 : "${CLAWD_WORKSPACE:=/home/${BOT_USER}/clawd}"
+: "${ASSISTANT_MODEL:=openai/gpt-5.5}"
 : "${RAW_MEMORY_CONSENT:=no}"
 : "${ENABLE_GITHUB_MCP:=no}"
 : "${ENABLE_TAILDRIVE:=no}"
@@ -58,6 +59,10 @@ for user_name in "$ADMIN_SSH_USER" "$SSH_USER" "$BOT_USER"; do
 done
 [[ "$ADMIN_SSH_USER" == "root" ]] || {
   echo "ADMIN_SSH_USER must be root for this hardened installer" >&2
+  exit 1
+}
+[[ "$ASSISTANT_MODEL" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || {
+  echo "ASSISTANT_MODEL must look like provider/model" >&2
   exit 1
 }
 [[ "$OPENCLAW_VERSION" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {

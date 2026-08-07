@@ -46,8 +46,14 @@ merged_allow="$(
 openclaw config set plugins.allow "$merged_allow" --strict-json
 
 openclaw config validate
-openclaw memory status --deep --agent main || true
-openclaw memory index --force --agent main || true
+
+# Indexing is allowed to fail without aborting the restore, but a silent
+# failure meant this step reported success while semantic recall was broken.
+# smoke-test.sh catches it later; saying so here makes the cause obvious.
+openclaw memory status --deep --agent main ||
+  echo "warning: memory status failed; semantic recall may be unavailable" >&2
+openclaw memory index --force --agent main ||
+  echo "warning: memory index failed; run 'openclaw memory index --force' after restore" >&2
 rm -f "$TMP_REMOTE"
 REMOTE
 

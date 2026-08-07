@@ -36,7 +36,7 @@ case "$1" in
     free -h
     ;;
   tailscale)
-    /usr/bin/tailscale status 2>&1 | sed -n '1,100p'
+    /usr/bin/tailscale status 2>&1 | redact_logs | sed -n '1,100p'
     ;;
   *)
     echo "unsupported host capability" >&2

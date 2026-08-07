@@ -94,7 +94,10 @@ if [[ -f "$HOME/.openclaw/.env" ]]; then
 fi
 
 openclaw config validate
-openclaw secrets audit --check || true
+# Advisory, but not silent: this is the check that plaintext credentials did
+# not end up in the config.
+openclaw secrets audit --check ||
+  echo "warning: secrets audit reported findings; run 'openclaw secrets audit' to review" >&2
 REMOTE
 
 echo "secret refs configured on $SERVER"

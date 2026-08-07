@@ -17,10 +17,11 @@ trap cleanup EXIT
 
 jq -n \
   --arg workspace "$CLAWD_WORKSPACE" \
+  --arg model "$ASSISTANT_MODEL" \
   --argjson owner "$TELEGRAM_USER_ID" \
   '[
     {path: "agents.defaults.workspace", value: $workspace},
-    {path: "agents.defaults.model", value: {primary: "openai/gpt-5.5"}},
+    {path: "agents.defaults.model", value: {primary: $model}},
     {path: "gateway.mode", value: "local"},
     {path: "channels.telegram.enabled", value: true},
     {path: "channels.telegram.dmPolicy", value: "allowlist"},

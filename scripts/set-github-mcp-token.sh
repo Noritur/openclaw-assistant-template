@@ -22,7 +22,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-jq --arg token "$token" '.GITHUB_MCP_PAT = $token' "$SECRETS_FILE" > "$tmp_file"
+# Passed through the environment, not as an argument: arguments are visible to
+# any local process through the process list, and this is a credential.
+GITHUB_MCP_PAT_VALUE="$token" \
+  jq '.GITHUB_MCP_PAT = env.GITHUB_MCP_PAT_VALUE' "$SECRETS_FILE" > "$tmp_file"
 chmod 600 "$tmp_file"
 mv "$tmp_file" "$SECRETS_FILE"
 unset token
