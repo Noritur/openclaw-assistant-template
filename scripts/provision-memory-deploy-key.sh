@@ -6,8 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 REMOTE_KEY=".ssh/openclaw_memory_ed25519"
-TITLE_PREFIX="$ASSISTANT_NAME memory"
-TITLE="$TITLE_PREFIX ${SERVER_IP} $(date +%F)"
+TITLE="$ASSISTANT_NAME memory ${SERVER_IP} $(date +%F)"
 TMP_PUB="$(mktemp)"
 trap 'rm -f "$TMP_PUB"' EXIT
 
@@ -16,35 +15,44 @@ trap 'rm -f "$TMP_PUB"' EXIT
 # indefinitely. Deleting a credential is destructive, so this only ever reports
 # and asks: it never revokes on its own.
 review_stale_deploy_keys() {
-  local current_key stale_rows count
+  local current_key stale_rows count writable
   current_key="$(awk '{print $1" "$2}' "$TMP_PUB")"
 
+  # Every key except the one just installed. An earlier version filtered by
+  # title prefix so a shared repository could not be harmed by a careless yes,
+  # but the memory repository is single-owner by design, and the filter hid the
+  # very key it needed to find: the original was created by hand with a name
+  # this convention does not produce. A silent miss is worse than one question.
   stale_rows="$(
     gh api "repos/$MEMORY_REPO_SLUG/keys" --paginate \
       --jq ".[] | select((.key | split(\" \") | .[0:2] | join(\" \")) != \"$current_key\")
-            | select(.title | startswith(\"$TITLE_PREFIX\"))
-            | [.id, .created_at, .title] | @tsv" 2>/dev/null || true
+            | [.id, .created_at, (if .read_only then \"read-only\" else \"WRITE\" end), .title]
+            | @tsv" 2>/dev/null || true
   )"
 
   if [[ -z "$stale_rows" ]]; then
-    echo "no superseded deploy keys for this assistant"
+    echo "no other deploy keys on $MEMORY_REPO_SLUG"
     return 0
   fi
 
   count="$(printf '%s\n' "$stale_rows" | wc -l | tr -d ' ')"
+  writable="$(printf '%s\n' "$stale_rows" | grep -c 'WRITE' || true)"
+
   echo
-  echo "$count deploy key(s) for this assistant still have write access to $MEMORY_REPO_SLUG:"
-  printf '%s\n' "$stale_rows" | while IFS=$'\t' read -r id created title; do
-    printf '  id=%s  created=%s  %s\n' "$id" "$created" "$title"
+  echo "$count other deploy key(s) exist on $MEMORY_REPO_SLUG ($writable with write access):"
+  printf '%s\n' "$stale_rows" | while IFS=$'\t' read -r id created access title; do
+    printf '  id=%-12s %-10s created=%s  %s\n' "$id" "$access" "${created%T*}" "$title"
   done
   echo
-  echo "these are almost certainly previous servers. a host that no longer runs"
-  echo "the assistant should not keep write access to its memory."
+  echo "a host that no longer runs the assistant must not keep write access to"
+  echo "its memory. keys not created by this installer are listed too, since"
+  echo "missing one silently is worse than asking about one you want to keep."
+  echo "review each before answering; this cannot be undone."
   echo
 
   if [[ ! -t 0 ]]; then
-    echo "not an interactive session; leaving them in place. revoke with:" >&2
-    printf '%s\n' "$stale_rows" | while IFS=$'\t' read -r id _ _; do
+    echo "not an interactive session; nothing was revoked. to revoke, run:" >&2
+    printf '%s\n' "$stale_rows" | while IFS=$'\t' read -r id _ _ _; do
       printf '  gh api -X DELETE repos/%s/keys/%s\n' "$MEMORY_REPO_SLUG" "$id" >&2
     done
     return 0
@@ -57,7 +65,7 @@ review_stale_deploy_keys() {
     return 0
   fi
 
-  printf '%s\n' "$stale_rows" | while IFS=$'\t' read -r id _ title; do
+  printf '%s\n' "$stale_rows" | while IFS=$'\t' read -r id _ _ title; do
     if gh api -X DELETE "repos/$MEMORY_REPO_SLUG/keys/$id" >/dev/null 2>&1; then
       printf '  revoked id=%s (%s)\n' "$id" "$title"
     else

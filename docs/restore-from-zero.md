@@ -37,9 +37,11 @@ the command pauses for OpenAI/Codex device OAuth if no usable profile exists.
 4. change `SERVER_IP` and `SERVER_SSH_HOST_KEY`, then run `./assistantctl restore`.
 5. run `./assistantctl doctor` and test memory recall in Telegram.
 6. keep the old server stopped until the new server has passed the smoke tests.
-7. revoke the old server's memory deploy key. restore lists superseded keys and
-   asks; it never revokes on its own. a host that no longer runs the assistant
-   must not keep write access to its memory.
+7. revoke the old server's memory deploy key. restore lists every other key on
+   the memory repository with its access level and asks; it never revokes on
+   its own. keys created outside this installer are listed too, because a key
+   missed silently keeps write access to memory forever. a host that no longer
+   runs the assistant must not keep write access to it.
 
 persona, notes, digests, and raw history survive through the memory repository.
 OAuth state and provider credentials do not and must be recreated or re-entered.
