@@ -173,6 +173,27 @@ grep -Fq 'AGENTS.md' "$alert_log" || {
   exit 1
 }
 
+# The alert must actually be attempted, not merely recorded as deduplicated.
+# The first version of this test checked only the dedup file, which is written
+# before the call, so a failing notifier looked identical to a working one.
+cat > "$runtime/notify-owner.sh" <<'FAILING'
+#!/usr/bin/env bash
+echo "notify-owner: TELEGRAM_USER_ID is not set; cannot alert" >&2
+exit 1
+FAILING
+chmod +x "$runtime/notify-owner.sh"
+printf 'second unapproved edit\n' >> "$workspace/AGENTS.md"
+failure_output="$(CONSENT=yes run_backup 2>&1)"
+grep -Fq 'could not be delivered' <<<"$failure_output" || {
+  echo "a failed policy alert was silent" >&2
+  exit 1
+}
+cat > "$runtime/notify-owner.sh" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$alert_log"
+EOF
+chmod +x "$runtime/notify-owner.sh"
+
 # The same unchanged difference must not alert again on every five-minute run.
 alert_count_before="$(wc -l < "$alert_log")"
 printf '%s\n' '- third durable fact' >> "$workspace/custom/user-notes.md"

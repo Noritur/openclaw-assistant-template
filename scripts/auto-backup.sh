@@ -78,10 +78,15 @@ POLICY_ALERTED="$ASSISTANT_STATE_DIR/policy-alerted.txt"
 
 alert_policy_change() {
   local file="$1"
-  [[ -x "$ASSISTANT_RUNTIME_DIR/notify-owner.sh" ]] || return 0
+  [[ -x "$ASSISTANT_RUNTIME_DIR/notify-owner.sh" ]] || {
+    echo "cannot alert: notify-owner.sh is missing from $ASSISTANT_RUNTIME_DIR" >&2
+    return 0
+  }
+  # Deliberately not silenced. An alert that fails without a trace is how this
+  # mechanism looked healthy while never reaching anyone.
   "$ASSISTANT_RUNTIME_DIR/notify-owner.sh" --text \
     "$(printf 'policy file changed and was withheld from backup: %s\napprove with: assistantctl policy-approve' "$file")" ||
-    true
+    echo "policy alert for $file could not be delivered" >&2
 }
 
 check_policy_files() {

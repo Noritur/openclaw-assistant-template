@@ -22,6 +22,10 @@ for an unverified systemd/apt target, use
 `./assistantctl restore --allow-unsupported` only after reading
 `docs/platforms.md`.
 
+owner-specific integrations live in `scripts/install-optional-*.sh`. restore runs
+whatever it finds, each module decides whether it is enabled, and the public
+template export excludes them.
+
 the restore flow bootstraps the runtime user, installs exact pinned versions,
 creates a write deploy key for the memory repository, restores memory, writes
 SecretRefs, configures the one-owner Telegram channel, installs the Gateway,

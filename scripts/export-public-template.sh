@@ -24,6 +24,10 @@ fi
 EXCLUDED_PATHS=(
   instance/config.env
   checks
+  # Owner-specific modules. Excluded as a class rather than by name, so adding
+  # one never requires remembering to update this list, and so no module name
+  # leaks into the public tree.
+  scripts/install-optional-*.sh
 )
 
 cd "$ROOT_DIR"
@@ -51,7 +55,9 @@ mkdir -p "$OUTPUT_DIR"
 is_excluded() {
   local candidate="$1" excluded
   for excluded in "${EXCLUDED_PATHS[@]}"; do
-    [[ "$candidate" == "$excluded" || "$candidate" == "$excluded"/* ]] && return 0
+    # Unquoted on purpose: entries may be glob patterns.
+    # shellcheck disable=SC2053
+    [[ "$candidate" == $excluded || "$candidate" == "$excluded"/* ]] && return 0
   done
   return 1
 }

@@ -218,6 +218,13 @@ restore_instance() {
     "$ROOT_DIR/scripts/install-github-readonly-mcp.sh"
     ensure_github_mcp_auth
   fi
+  # Owner-specific modules, discovered rather than named here, so this file
+  # stays identical between a private instance and the public template.
+  # Each decides for itself whether it is enabled.
+  for optional_module in "$ROOT_DIR"/scripts/install-optional-*.sh; do
+    [[ -x "$optional_module" ]] || continue
+    "$optional_module"
+  done
   if [[ "$ENABLE_TAILDRIVE" == "yes" ]]; then
     "$ROOT_DIR/scripts/install-taildrive-bridge.sh"
   fi
@@ -241,7 +248,7 @@ case "$COMMAND" in
     ssh_remote 'systemctl --user status openclaw-memory-backup.timer --no-pager; cat "$HOME/.local/state/openclaw-assistant/last-backup.json"'
     ;;
   backup-now)
-    ssh_remote "CLAWD_WORKSPACE='$CLAWD_WORKSPACE' RAW_MEMORY_CONSENT='$RAW_MEMORY_CONSENT' ASSISTANT_RUNTIME_DIR=/opt/openclaw-assistant/runtime ASSISTANT_RUNTIME_TRUST=required /opt/openclaw-assistant/runtime/auto-backup.sh --verify"
+    ssh_remote "CLAWD_WORKSPACE='$CLAWD_WORKSPACE' RAW_MEMORY_CONSENT='$RAW_MEMORY_CONSENT' ASSISTANT_RUNTIME_DIR=/opt/openclaw-assistant/runtime ASSISTANT_RUNTIME_TRUST=required TELEGRAM_USER_ID='$TELEGRAM_USER_ID' /opt/openclaw-assistant/runtime/auto-backup.sh --verify"
     ;;
   policy-approve)
     # Runs as root: the baseline lives with the root-owned runtime code so the
